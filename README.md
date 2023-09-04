@@ -6,7 +6,7 @@ This password manager is protected against both swap attacks and rollback attack
  - It is protected against rollback attacks by creating a checksum (a hash of the password manager's serialized contents) when the password manager is saved. The checksum is then compared against the serialized contents before reconstruction in order to verify that the contents were not altered.
 
 # How to Use
-To install dependencies, use `pip install cryptography`. After that, the library is free to use. 
+To install dependencies, use `pip install cryptography`. After that, the library `password_manager.py` is free to use. 
 
 A simple test suite can be found in `password_manager_tests.py`.
 
