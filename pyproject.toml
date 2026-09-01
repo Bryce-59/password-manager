@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "password-manager"
+version = "1.0.0"
+description = "A security-focused educational password manager in Python"
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=42"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
