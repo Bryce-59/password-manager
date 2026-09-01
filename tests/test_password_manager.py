@@ -12,8 +12,7 @@ class PasswordManagerTests(unittest.TestCase):
         "domainA": "passwordA",
         "domainB": "passwordB",
         "domainC": "passwordC",
-        "veryVeryVeryLongDomainNameOfOneHundredTwentyEightPlusCharactersReVeryVeryVeryLongDomainNameOfOneHundredTwentyEightPlusCharacters":
-            "veryVeryLongDomainNamePassword",
+        "veryVeryVeryLongDomainNameOfOneHundredTwentyEightPlusCharactersReVeryVeryVeryLongDomainNameOfOneHundredTwentyEightPlusCharacters": "veryVeryLongDomainNamePassword",
         "domainE": "passwordE",
     }
 
@@ -271,28 +270,28 @@ class PasswordManagerTests(unittest.TestCase):
             PasswordManager(self.MASTER, data, modified_checksum)
 
     def test_invalid_checksum_is_rejected(self):
-      manager = self.create_manager()
+        manager = self.create_manager()
 
-      data, checksum = manager.dump()
+        data, checksum = manager.dump()
 
-      with self.assertRaises(ValueError):
-          PasswordManager(
-              self.MASTER,
-              data,
-              checksum[:-2],
-          )
+        with self.assertRaises(ValueError):
+            PasswordManager(
+                self.MASTER,
+                data,
+                checksum[:-2],
+            )
 
     def test_domain_names_do_not_appear_in_dump(self):
-      manager = PasswordManager(self.MASTER)
-      manager.set("supersecretbank.com", "password123")
+        manager = PasswordManager(self.MASTER)
+        manager.set("supersecretbank.com", "password123")
 
-      data, _ = manager.dump()
+        data, _ = manager.dump()
 
-      self.assertNotIn("supersecretbank.com", data)
-      self.assertNotIn(
-          "supersecretbank.com".encode("ascii").hex(),
-          data,
-      )
+        self.assertNotIn("supersecretbank.com", data)
+        self.assertNotIn(
+            "supersecretbank.com".encode("ascii").hex(),
+            data,
+        )
 
     def test_ciphertext_size_independent_of_password_length(self):
         manager = PasswordManager(self.MASTER)
@@ -349,21 +348,18 @@ class PasswordManagerTests(unittest.TestCase):
             manager.get("example.com")
 
     def test_tampered_outer_nonce_is_rejected(self):
-      manager = self.create_manager()
+        manager = self.create_manager()
 
-      data, _ = manager.dump()
+        data, _ = manager.dump()
 
-      data_bytes = bytearray.fromhex(data)
+        data_bytes = bytearray.fromhex(data)
 
-      # Salt = first 16 bytes
-      # Outer nonce = next 12 bytes
-      data_bytes[16] ^= 0x01
+        # Salt = first 16 bytes
+        # Outer nonce = next 12 bytes
+        data_bytes[16] ^= 0x01
 
-      with self.assertRaises(ValueError):
-          PasswordManager(
-              self.MASTER,
-              bytes(data_bytes).hex()
-          )
+        with self.assertRaises(ValueError):
+            PasswordManager(self.MASTER, bytes(data_bytes).hex())
 
     def test_password_ciphertext_cannot_be_swapped_between_domains(self):
         manager = PasswordManager(self.MASTER)
@@ -385,7 +381,16 @@ class PasswordManagerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             manager.get("domainB")
 
-      
+    def test_tampered_serialized_data_is_rejected_without_checksum(self):
+        manager = self.create_manager()
+
+        data, _ = manager.dump()
+
+        data_bytes = bytearray.fromhex(data)
+        data_bytes[-1] ^= 1
+
+        with self.assertRaises(ValueError):
+            PasswordManager(self.MASTER, bytes(data_bytes).hex())
 
     # ------------------------------------------------------------------
     # Persistence of multiple entries
@@ -411,59 +416,52 @@ class PasswordManagerTests(unittest.TestCase):
             "newPassword",
         )
 
-    def test_generate_new_rejects_negative_length(self):
-      manager = PasswordManager(self.MASTER)
+    # ------------------------------------------------------------------
+    # Misc
+    # ------------------------------------------------------------------
 
-      with self.assertRaises(ValueError):
-          manager.generate_new("example.com", -1)
+    def test_generate_new_rejects_negative_length(self):
+        manager = PasswordManager(self.MASTER)
+
+        with self.assertRaises(ValueError):
+            manager.generate_new("example.com", -1)
 
     def test_password_starting_with_null_round_trips(self):
-      manager = PasswordManager(self.MASTER)
+        manager = PasswordManager(self.MASTER)
 
-      password = "\0secret"
-      manager.set("example.com", password)
+        password = "\0secret"
+        manager.set("example.com", password)
 
-      self.assertEqual(manager.get("example.com"), password)
+        self.assertEqual(manager.get("example.com"), password)
 
     def test_updating_password_uses_new_nonce(self):
-      manager = PasswordManager(self.MASTER)
+        manager = PasswordManager(self.MASTER)
 
-      manager.set("example.com", "password1")
-      first = manager._kvs[manager._hash_domain("example.com")]
+        manager.set("example.com", "password1")
+        first = manager._kvs[manager._hash_domain("example.com")]
 
-      manager.set("example.com", "password2")
-      second = manager._kvs[manager._hash_domain("example.com")]
+        manager.set("example.com", "password2")
+        second = manager._kvs[manager._hash_domain("example.com")]
 
-      self.assertNotEqual(first[:12], second[:12])
-      self.assertNotEqual(first, second)
+        self.assertNotEqual(first[:12], second[:12])
+        self.assertNotEqual(first, second)
 
     def test_different_entries_use_different_nonces(self):
-      manager = PasswordManager(self.MASTER)
+        manager = PasswordManager(self.MASTER)
 
-      manager.set("domainA", "passwordA")
-      manager.set("domainB", "passwordB")
-      manager.set("domainC", "passwordC")
+        manager.set("domainA", "passwordA")
+        manager.set("domainB", "passwordB")
+        manager.set("domainC", "passwordC")
 
-      key_a = manager._hash_domain("domainA")
-      key_b = manager._hash_domain("domainB")
-      key_c = manager._hash_domain("domainC")
+        key_a = manager._hash_domain("domainA")
+        key_b = manager._hash_domain("domainB")
+        key_c = manager._hash_domain("domainC")
 
-      nonce_a = manager._kvs[key_a][:12]
-      nonce_b = manager._kvs[key_b][:12]
-      nonce_c = manager._kvs[key_c][:12]
+        nonce_a = manager._kvs[key_a][:12]
+        nonce_b = manager._kvs[key_b][:12]
+        nonce_c = manager._kvs[key_c][:12]
 
-      self.assertEqual(len({nonce_a, nonce_b, nonce_c}), 3)
-
-    def test_tampered_serialized_data_is_rejected_without_checksum(self):
-      manager = self.create_manager()
-
-      data, _ = manager.dump()
-
-      data_bytes = bytearray.fromhex(data)
-      data_bytes[-1] ^= 1
-
-      with self.assertRaises(ValueError):
-          PasswordManager(self.MASTER, bytes(data_bytes).hex())
+        self.assertEqual(len({nonce_a, nonce_b, nonce_c}), 3)
 
 
 if __name__ == "__main__":
