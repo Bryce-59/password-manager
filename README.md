@@ -49,11 +49,13 @@ A test suite is included in `password_manager_tests.py`.
 
 ---
 
-# Current Implementation
+# Project Design
+
+## Current Implementation
 
 The current version is built around a few simple ideas: derive cryptographic material from the master password, give each domain its own encryption key, authenticate encrypted data, and store only encrypted password entries.
 
-## Master Key Derivation
+### Master Key Derivation
 
 The user's master password is converted into a 256-bit master key using **PBKDF2-HMAC-SHA256** with a randomly generated 16-byte salt and 2,000,000 iterations.
 
@@ -69,7 +71,7 @@ PBKDF2-HMAC-SHA256
 
 The salt is stored alongside the encrypted manager state, so it does not need to remain secret.
 
-## Key Separation
+### Key Separation
 
 The master key output by PBKDF2 is used in two ways. It is used directly (together with the salt) to encrypt the top-level serialized state with AES-GCM, and it is separately fed through **HKDF** to produce an independent pseudorandom key (PRK) from which all *entry-specific* keys and the random-generator key are derived via `HKDFExpand`.
 
@@ -90,7 +92,7 @@ The master key output by PBKDF2 is used in two ways. It is used directly (togeth
 
 This means per-domain entries and the password generator never share key material with each other or with the top-level state encryption — reducing the blast radius if any single derived key were ever compromised. The top-level state encryption key is not run through this separation, since it is only ever used once per `dump()` call and doesn't need role-specific derivation the way per-entry keys do.
 
-## Domain-Bound Entries
+### Domain-Bound Entries
 
 Domains are first converted to a keyed hash and used as the identifier for entries in the internal database.
 
@@ -115,7 +117,7 @@ Password ────────────────────┘
 
 As a result, an encrypted password entry cannot simply be moved to another domain and successfully decrypted — this is the manager's defense against **swap attacks**, where an adversary interchanges the stored entries for two different domains. Because the binding happens at the AEAD layer itself, this protection holds independently of the rollback protection described below.
 
-## Authenticated Encryption
+### Authenticated Encryption
 
 The current implementation uses **AES-GCM** for both the manager state and individual password entries.
 
@@ -127,13 +129,13 @@ AES-GCM provides:
 
 When encrypted data is modified, authentication fails and the entry is rejected instead of silently returning corrupted data.
 
-## Rollback Protection
+### Rollback Protection
 
 `dump()` returns both the serialized, encrypted state and a SHA-256 checksum computed over that serialized blob. When the manager is later reconstructed, supplying this checksum causes the loader to verify it against the incoming data before attempting to decrypt anything.
 
 This guards against **rollback attacks**, where an adversary who once had access to an older serialized state replaces a newer one with it. Authenticated encryption alone does not prevent this — an old ciphertext is still a validly authenticated ciphertext — so the checksum is expected to be persisted somewhere the adversary cannot also tamper with (e.g. separate trusted storage), and checked on every load.
 
-## Password Storage
+### Password Storage
 
 Passwords are encoded into a fixed-size 65-byte representation:
 
@@ -145,7 +147,7 @@ With a maximum password length of 64 characters, every stored password therefore
 
 On decoding, the implementation verifies the stored length, checks the padding, and ensures that the resulting value is valid ASCII.
 
-## Nonce Management
+### Nonce Management
 
 AES-GCM requires careful nonce management. The current implementation uses an explicit monotonically increasing counter to generate 12-byte nonces.
 
@@ -153,7 +155,7 @@ Each encryption receives a new nonce, and the counter is stored as part of the s
 
 The implementation also detects counter exhaustion rather than allowing the counter to wrap around.
 
-## Password Generation
+### Password Generation
 
 Generated passwords use the following alphabet:
 
@@ -165,7 +167,7 @@ Random values are produced by an HMAC-SHA256-based counter construction with a s
 
 The generator state is serialized alongside the password database, allowing the generator to resume consistently after loading.
 
-## Serialization
+### Serialization
 
 The manager state is serialized as JSON rather than as a Python object.
 
@@ -185,7 +187,7 @@ Entries are encoded using Base64 so they can be represented safely inside JSON.
 
 Before accepting a serialized manager, the implementation validates the structure and the expected types and lengths of its fields.
 
-## Input Validation
+### Input Validation
 
 Master passwords and domain names are required to be ASCII and are explicitly validated, raising a clear `ValueError` if they are not. Stored passwords are assumed to be ASCII per the project's design assumptions and are not independently re-validated for encoding beyond what round-trips through encode/decode.
 
@@ -202,11 +204,11 @@ The goal is not just to make invalid input fail, but to make it fail in a contro
 
 ---
 
-# What Improved?
+## What Improved?
 
 The original version already explored several interesting security concepts, but the current implementation replaces a number of weaker or less explicit mechanisms with safer constructions.
 
-## AES-CTR → AES-GCM
+### AES-CTR → AES-GCM
 
 The original manager encrypted its serialized state using AES-CTR.
 
@@ -216,7 +218,7 @@ The current version uses AES-GCM instead, giving the encrypted manager state bot
 
 **Why it matters:** encrypted data should generally be authenticated as well as encrypted.
 
-## `pickle` → Structured JSON
+### `pickle` → Structured JSON
 
 The original serialized the password database with Python's `pickle` module.
 
@@ -231,7 +233,7 @@ This means the stored format is now:
 
 The loader checks the structure before accepting the state rather than simply attempting to deserialize an arbitrary Python object.
 
-## Deterministic Nonces → Explicit Nonce Management
+### Deterministic Nonces → Explicit Nonce Management
 
 The original implementation derived encryption nonces deterministically from domain- and key-related values, which meant an updated entry could end up reusing a nonce under the same key — a critical failure mode for AES-GCM.
 
@@ -239,7 +241,7 @@ The current implementation introduces an explicit, persisted nonce counter and a
 
 **Why it matters:** nonce reuse under AES-GCM doesn't just leak information — it can allow forging future ciphertexts under the same key.
 
-## Direct Key Construction → Key Separation with HKDF
+### Direct Key Construction → Key Separation with HKDF
 
 The original implementation relied primarily on HMAC constructions built directly on the master key and salt for every purpose.
 
@@ -247,25 +249,25 @@ The current version adds an HKDF-based derivation step on top of the same PBKDF2
 
 **Why it matters:** separating cryptographic roles reduces accidental key reuse and makes the design easier to audit.
 
-## Hash-Chain Randomness → Counter-Based HMAC Generator
+### Hash-Chain Randomness → Counter-Based HMAC Generator
 
 The original password generator repeatedly hashed a mutable seed, and that same seed value doubled as the nonce source for state encryption — meaning generator state was partially exposed by every dump.
 
 The current implementation uses an HMAC-SHA256 construction driven by an explicit counter and a separately derived key, decoupling the generator's internal state from anything that gets exposed in the output.
 
-## Implicit Password Length → Explicit Encoding
+### Implicit Password Length → Explicit Encoding
 
 Previously, passwords were padded and later recovered by stripping padding bytes — which also meant a password beginning with a null byte could not round-trip correctly.
 
 The current representation explicitly stores the password length before the password data, so the decoder validates the complete representation rather than assuming stripped padding recovers the original password.
 
-## Minimal Validation → Defensive Validation
+### Minimal Validation → Defensive Validation
 
 The current implementation performs considerably more validation when loading and decrypting data, covering cases such as invalid encodings, malformed structure, out-of-range counters, and authentication failures — see [Input Validation](#input-validation) above.
 
 The goal is not just to make invalid input fail, but to make it fail in a controlled and predictable way.
 
-## Overall Result
+### Overall Result
 
 The project started as a demonstration of a semantically secure password manager, aiming to satisfy an indistinguishability-style security game against an adaptive adversary. The current version keeps that original goal while making the implementation more explicit, defensive, and cryptographically robust — and adds explicit, independent defenses against rollback and swap attacks specifically.
 
